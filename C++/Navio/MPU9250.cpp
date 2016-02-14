@@ -419,7 +419,7 @@ void MPU9250::read_all(){
         data=(float)bit_data;
         accelerometer_data[i]=data/acc_divider;
     }
-    //Get temperature
+    //Get temperature, i = 3
     bit_data=((int16_t)response[i*2]<<8)|response[i*2+1];
     data=(float)bit_data;
     temperature=((data-21)/333.87)+21;
