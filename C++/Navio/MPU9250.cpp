@@ -1,14 +1,44 @@
-/*
-Written by Qiyong Mu (kylongmu@msn.com)
-Adapted for Raspberry Pi by Mikhail Avkhimenia (mikhail.avkhimenia@emlid.com)
+/**
+ * @file MPU9250.cpp
+ *
+ * Driver for the Invensense MPU9250 via Linux SPIdev
+ *
+ * @auhor Bo Liu (bo-rc@acm.org)
+ *
+ * Re-engineered implementations from emlid
 */
 
 #include "MPU9250.h"
 
-//-----------------------------------------------------------------------------------------------
+# define DATA_BYTE_ZERO 0x00
 
-MPU9250::MPU9250()
+// nested implementation class
+class MPU9250_impl {
+    friend class MPU9250;
+private:
+    float acc_divider;
+    float gyro_divider;
+
+    int calib_data[3];
+    float magnetometer_ASA[3];
+
+    float temperature;
+    float accelerometer_data[3];
+    float gyroscope_data[3];
+    float magnetometer_data[3];
+
+    float _error;
+};
+
+MPU9250::MPU9250() :
+    impl(new MPU9250_impl)
 {
+    // nothing needs to be done.
+}
+
+MPU9250::~MPU9250()
+{
+    delete impl;
 }
 
 /*-----------------------------------------------------------------------------------------------
@@ -18,8 +48,6 @@ usage: use these methods to read and write MPU9250 registers over SPI
 
 unsigned int MPU9250::WriteReg( uint8_t WriteAddr, uint8_t WriteData )
 {
-    unsigned int temp_val;
-
     unsigned char tx[2] = {WriteAddr, WriteData};
 	unsigned char rx[2] = {0};
 
@@ -30,9 +58,9 @@ unsigned int MPU9250::WriteReg( uint8_t WriteAddr, uint8_t WriteData )
 
 //-----------------------------------------------------------------------------------------------
 
-unsigned int  MPU9250::ReadReg( uint8_t WriteAddr, uint8_t WriteData )
+unsigned int  MPU9250::ReadReg( uint8_t ReadAddr )
 {
-    return WriteReg(WriteAddr | READ_FLAG, WriteData);
+    return WriteReg(ReadAddr | READ_FLAG, DATA_BYTE_ZERO);
 }
 
 //-----------------------------------------------------------------------------------------------
@@ -62,10 +90,9 @@ returns true if mpu9250 answers
 
 bool MPU9250::testConnection()
 {
-    unsigned int response;
-    response=WriteReg(MPUREG_WHOAMI|READ_FLAG, 0x00);
-
-    if (response == 0x71)
+    // MPUREG_WHOAMI stores device ID
+    // the default value is 0x71
+    if (whoami() == 0x71)
         return true;
     else
         return false;
@@ -145,24 +172,25 @@ returns the range set (2,4,8 or 16)
 
 unsigned int MPU9250::set_acc_scale(int scale)
 {
-    unsigned int temp_scale;
     WriteReg(MPUREG_ACCEL_CONFIG, scale);
 
     switch (scale){
         case BITS_FS_2G:
-            acc_divider=16384;
+            impl->acc_divider=16384;
         break;
         case BITS_FS_4G:
-            acc_divider=8192;
+            impl->acc_divider=8192;
         break;
         case BITS_FS_8G:
-            acc_divider=4096;
+            impl->acc_divider=4096;
         break;
         case BITS_FS_16G:
-            acc_divider=2048;
+            impl->acc_divider=2048;
         break;
     }
-    temp_scale=WriteReg(MPUREG_ACCEL_CONFIG|READ_FLAG, 0x00);
+
+
+    unsigned int temp_scale = ReadReg(MPUREG_ACCEL_CONFIG);
 
     switch (temp_scale){
         case BITS_FS_2G:
@@ -199,19 +227,19 @@ unsigned int MPU9250::set_gyro_scale(int scale)
     WriteReg(MPUREG_GYRO_CONFIG, scale);
     switch (scale){
         case BITS_FS_250DPS:
-            gyro_divider=131;
+            impl->gyro_divider=131;
         break;
         case BITS_FS_500DPS:
-            gyro_divider=65.5;
+            impl->gyro_divider=65.5;
         break;
         case BITS_FS_1000DPS:
-            gyro_divider=32.8;
+            impl->gyro_divider=32.8;
         break;
         case BITS_FS_2000DPS:
-            gyro_divider=16.4;
+            impl->gyro_divider=16.4;
         break;
     }
-    temp_scale=WriteReg(MPUREG_GYRO_CONFIG|READ_FLAG, 0x00);
+    temp_scale=ReadReg(MPUREG_GYRO_CONFIG);
     switch (temp_scale){
         case BITS_FS_250DPS:
             temp_scale=250;
@@ -229,17 +257,13 @@ unsigned int MPU9250::set_gyro_scale(int scale)
     return temp_scale;
 }
 
-/*-----------------------------------------------------------------------------------------------
-                                WHO AM I?
-usage: call this function to know if SPI is working correctly. It checks the I2C address of the
-mpu9250 which should be 104 when in SPI mode.
-returns the I2C address (104)
------------------------------------------------------------------------------------------------*/
 
+// returns the value in MPUREG_WHOAMI
+// which is the device ID
+// default is 0x71
 unsigned int MPU9250::whoami()
 {
-    unsigned int response;
-    response=WriteReg(MPUREG_WHOAMI|READ_FLAG, 0x00);
+    unsigned int response=ReadReg(MPUREG_WHOAMI);
     return response;
 }
 
@@ -262,7 +286,7 @@ void MPU9250::read_acc()
     for(i=0; i<3; i++) {
         bit_data=((int16_t)response[i*2]<<8)|response[i*2+1];
         data=(float)bit_data;
-        accelerometer_data[i]=data/acc_divider;
+        impl->accelerometer_data[i]=data/impl->acc_divider;
     }
 
 }
@@ -285,7 +309,7 @@ void MPU9250::read_gyro()
     for(i=0; i<3; i++) {
         bit_data=((int16_t)response[i*2]<<8)|response[i*2+1];
         data=(float)bit_data;
-        gyroscope_data[i]=data/gyro_divider;
+        impl->gyroscope_data[i]=data/impl->gyro_divider;
     }
 
 }
@@ -305,7 +329,7 @@ void MPU9250::read_temp()
 
     bit_data=((int16_t)response[0]<<8)|response[1];
     data=(float)bit_data;
-    temperature=(data/340)+36.53;
+    impl->temperature=(data/340)+36.53;
 }
 
 /*-----------------------------------------------------------------------------------------------
@@ -328,9 +352,9 @@ void MPU9250::calib_acc()
     //temp_scale=WriteReg(MPUREG_ACCEL_CONFIG, 0x80>>axis);
 
     ReadRegs(MPUREG_SELF_TEST_X,response,4);
-    calib_data[0]=((response[0]&11100000)>>3)|((response[3]&00110000)>>4);
-    calib_data[1]=((response[1]&11100000)>>3)|((response[3]&00001100)>>2);
-    calib_data[2]=((response[2]&11100000)>>3)|((response[3]&00000011));
+    impl->calib_data[0]=((response[0]&11100000)>>3)|((response[3]&00110000)>>4);
+    impl->calib_data[1]=((response[1]&11100000)>>3)|((response[3]&00001100)>>2);
+    impl->calib_data[2]=((response[2]&11100000)>>3)|((response[3]&00000011));
 
     set_acc_scale(temp_scale);
 }
@@ -338,14 +362,13 @@ void MPU9250::calib_acc()
 //-----------------------------------------------------------------------------------------------
 
 uint8_t MPU9250::AK8963_whoami(){
-    uint8_t response;
     WriteReg(MPUREG_I2C_SLV0_ADDR,AK8963_I2C_ADDR|READ_FLAG); //Set the I2C slave addres of AK8963 and set for read.
     WriteReg(MPUREG_I2C_SLV0_REG, AK8963_WIA); //I2C slave 0 register address from where to begin data transfer
     WriteReg(MPUREG_I2C_SLV0_CTRL, 0x81); //Read 1 byte from the magnetometer
 
     //WriteReg(MPUREG_I2C_SLV0_CTRL, 0x81);    //Enable I2C and set bytes
     usleep(10000);
-    response=WriteReg(MPUREG_EXT_SENS_DATA_00|READ_FLAG, 0x00);    //Read I2C
+    uint8_t response=ReadReg(MPUREG_EXT_SENS_DATA_00);    //Read I2C
     //ReadRegs(MPUREG_EXT_SENS_DATA_00,response,1);
     //response=WriteReg(MPUREG_I2C_SLV0_DO, 0x00);    //Read I2C
 
@@ -371,7 +394,9 @@ void MPU9250::calib_mag(){
     //response=WriteReg(MPUREG_I2C_SLV0_DO, 0x00);    //Read I2C
     for(i=0; i<3; i++) {
         data=response[i];
-        magnetometer_ASA[i]=((data-128)/256+1)*Magnetometer_Sensitivity_Scale_Factor;
+        // magnetometer_ASA is adjusted measurement data
+        // see the following formula in MPU9250 datasheet
+        impl->magnetometer_ASA[i]=((data-128)/256+1)*Magnetometer_Sensitivity_Scale_Factor;
     }
 }
 
@@ -393,7 +418,7 @@ void MPU9250::read_mag(){
     for(i=0; i<3; i++) {
         bit_data=((int16_t)response[i*2+1]<<8)|response[i*2];
         data=(float)bit_data;
-        magnetometer_data[i]=data*magnetometer_ASA[i];
+        impl->magnetometer_data[i]=data*impl->magnetometer_ASA[i];
     }
 }
 
@@ -417,23 +442,23 @@ void MPU9250::read_all(){
     for(i=0; i<3; i++) {
         bit_data=((int16_t)response[i*2]<<8)|response[i*2+1];
         data=(float)bit_data;
-        accelerometer_data[i]=data/acc_divider;
+        impl->accelerometer_data[i]=data/impl->acc_divider;
     }
     //Get temperature, i = 3
     bit_data=((int16_t)response[i*2]<<8)|response[i*2+1];
     data=(float)bit_data;
-    temperature=((data-21)/333.87)+21;
+    impl->temperature=((data-21)/333.87)+21;
     //Get gyroscope value
     for(i=4; i<7; i++) {
         bit_data=((int16_t)response[i*2]<<8)|response[i*2+1];
         data=(float)bit_data;
-        gyroscope_data[i-4]=data/gyro_divider;
+        impl->gyroscope_data[i-4]=data/impl->gyro_divider;
     }
     //Get Magnetometer value
     for(i=7; i<10; i++) {
         bit_data=((int16_t)response[i*2+1]<<8)|response[i*2];
         data=(float)bit_data;
-        magnetometer_data[i-7]=data*magnetometer_ASA[i-7];
+        impl->magnetometer_data[i-7]=data*impl->magnetometer_ASA[i-7];
     }
 }
 
@@ -446,15 +471,15 @@ returns accel, gyro and mag values
 void MPU9250::getMotion9(float *ax, float *ay, float *az, float *gx, float *gy, float *gz, float *mx, float *my, float *mz)
 {
     read_all();
-    *ax = accelerometer_data[0];
-    *ay = accelerometer_data[1];
-    *az = accelerometer_data[2];
-    *gx = gyroscope_data[0];
-    *gy = gyroscope_data[1];
-    *gz = gyroscope_data[2];
-    *mx = magnetometer_data[0];
-    *my = magnetometer_data[1];
-    *mz = magnetometer_data[2];
+    *ax = impl->accelerometer_data[0];
+    *ay = impl->accelerometer_data[1];
+    *az = impl->accelerometer_data[2];
+    *gx = impl->gyroscope_data[0];
+    *gy = impl->gyroscope_data[1];
+    *gz = impl->gyroscope_data[2];
+    *mx = impl->magnetometer_data[0];
+    *my = impl->magnetometer_data[1];
+    *mz = impl->magnetometer_data[2];
 }
 
 //-----------------------------------------------------------------------------------------------
@@ -463,10 +488,10 @@ void MPU9250::getMotion6(float *ax, float *ay, float *az, float *gx, float *gy, 
 {
     read_acc();
     read_gyro();
-    *ax = accelerometer_data[0];
-    *ay = accelerometer_data[1];
-    *az = accelerometer_data[2];
-    *gx = gyroscope_data[0];
-    *gy = gyroscope_data[1];
-    *gz = gyroscope_data[2];
+    *ax = impl->accelerometer_data[0];
+    *ay = impl->accelerometer_data[1];
+    *az = impl->accelerometer_data[2];
+    *gx = impl->gyroscope_data[0];
+    *gy = impl->gyroscope_data[1];
+    *gz = impl->gyroscope_data[2];
 }

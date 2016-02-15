@@ -1,59 +1,17 @@
-/*
-Written by Qiyong Mu (kylongmu@msn.com)
-Adapted for Raspberry Pi by Mikhail Avkhimenia (mikhail.avkhimenia@emlid.com)
+/**
+ * @file MPU9250.h
+ *
+ * Driver for the Invensense MPU9250 via Linux SPIdev
+ *
+ * @auhor Bo Liu (bo-rc@acm.org)
+ *
+ * Re-engineered implementations from emlid
 */
 
 #ifndef _MPU9250_H
 #define _MPU9250_H
 
 #include "SPIdev.h"
-
-class MPU9250 {
-public:
-    MPU9250();
-
-    bool initialize(int sample_rate_div = 1, int low_pass_filter = 0x01);
-    bool testConnection();
-
-    unsigned int WriteReg( uint8_t WriteAddr, uint8_t WriteData );
-    unsigned int ReadReg( uint8_t WriteAddr, uint8_t WriteData );
-    void ReadRegs( uint8_t ReadAddr, uint8_t *ReadBuf, unsigned int Bytes );
-
-    unsigned int set_gyro_scale(int scale);
-    unsigned int set_acc_scale(int scale);
-
-    void calib_acc();
-    void calib_mag();
-
-    void read_temp();
-    void read_acc();
-    void read_gyro();
-    void read_mag();
-    void read_all();
-
-    unsigned int whoami();
-    uint8_t AK8963_whoami();
-
-    void getMotion9(float *ax, float *ay, float *az, float *gx, float *gy, float *gz, float *mx, float *my, float *mz);
-    void getMotion6(float *ax, float *ay, float *az, float *gx, float *gy, float *gz);
-
-public:
-    float acc_divider;
-    float gyro_divider;
-
-    int calib_data[3];
-    float magnetometer_ASA[3];
-
-    float temperature;
-    float accelerometer_data[3];
-    float gyroscope_data[3];
-    float magnetometer_data[3];
-
-  private:
-    float _error;
-};
-
-#endif //_MPU9250_H
 
 // MPU9250 registers
 #define MPUREG_XG_OFFS_TC 0x00
@@ -250,3 +208,44 @@ public:
 #define MPU9250T_85degC   ((float)0.002995177763f) // 0.002995177763 degC/LSB
 
 #define Magnetometer_Sensitivity_Scale_Factor ((float)0.15f)
+
+/**
+ * Pimpl pattern:
+ *  class MPU9250 uses class MPU9250_impl as its implementation class
+ */
+class MPU9250_impl;
+
+class MPU9250 {
+public:
+    MPU9250();
+    ~MPU9250();
+
+    bool initialize(int sample_rate_div = 1, int low_pass_filter = BITS_DLPF_CFG_188HZ);
+    bool testConnection();
+
+    unsigned int WriteReg( uint8_t WriteAddr, uint8_t WriteData );
+    unsigned int ReadReg( uint8_t ReadAddr);
+    void ReadRegs( uint8_t ReadAddr, uint8_t *ReadBuf, unsigned int Bytes );
+
+    unsigned int set_gyro_scale(int scale);
+    unsigned int set_acc_scale(int scale);
+
+    void calib_acc();
+    void calib_mag();
+
+    void read_temp();
+    void read_acc();
+    void read_gyro();
+    void read_mag();
+    void read_all();
+
+    unsigned int whoami();
+    uint8_t AK8963_whoami();
+
+    void getMotion9(float *ax, float *ay, float *az, float *gx, float *gy, float *gz, float *mx, float *my, float *mz);
+    void getMotion6(float *ax, float *ay, float *az, float *gx, float *gy, float *gz);
+
+private:
+    MPU9250_impl * impl; // no exposure of anything private
+};
+#endif //_MPU9250_H
