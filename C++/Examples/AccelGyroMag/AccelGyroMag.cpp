@@ -14,6 +14,7 @@ make
 */
 
 #include "Navio/MPU9250.h"
+#include <iostream>
 
 //=============================================================================
 
@@ -25,6 +26,15 @@ int main()
 	imu.initialize();
 
 	float ax, ay, az, gx, gy, gz, mx, my, mz;
+
+    uint8_t addr = imu.whoami();
+
+    std::cout << "MPU9250 address: " << std::hex << addr << std::endl;
+
+    if(imu.testConnection())
+    {
+        std::cout << "MPU9250 is connected" << std::endl;
+    }
 
     //-------------------------------------------------------------------------
 
